@@ -24,7 +24,7 @@ const ADMIN_TOKEN = process.env.API_KEY;
  */
 function formatOrderDate(timestamp) {
   // 請實作此函式
-  // 提示：dayjs.unix(timestamp).format('YYYY/MM/DD HH:mm')
+  return dayjs.unix(timestamp).format('YYYY/MM/DD HH:mm')
 }
 
 /**
@@ -38,6 +38,8 @@ function getDaysAgo(timestamp) {
   // 1. 用 dayjs() 取得今天
   // 2. 用 dayjs.unix(timestamp) 取得訂單日期
   // 3. 用 .diff() 計算天數差異
+  const daysAgo = dayjs().diff(dayjs.unix(timestamp), 'days')
+  return daysAgo > 0 ? `${daysAgo} 天前`:'今天'
 }
 
 /**
@@ -47,6 +49,8 @@ function getDaysAgo(timestamp) {
  */
 function isOrderOverdue(timestamp) {
   // 請實作此函式
+  const daysAgo = dayjs().diff(dayjs.unix(timestamp), 'days')
+  return daysAgo > 7
 }
 
 /**
@@ -60,6 +64,10 @@ function getThisWeekOrders(orders) {
   // 1. 用 dayjs().startOf('week') 取得本週開始
   // 2. 用 dayjs().endOf('week') 取得本週結束
   // 3. 用 .isBefore() 和 .isAfter() 判斷
+  return orders.filter(obj => 
+    dayjs.unix(obj.createdAt).isAfter(dayjs().startOf('week')) &&
+    dayjs.unix(obj.createdAt).isBefore(dayjs().endOf('week'))
+  )
 }
 
 // ========================================
@@ -80,6 +88,16 @@ function getThisWeekOrders(orders) {
  */
 function validateOrderUser(data) {
   // 請實作此函式
+  const errs = []
+  const paymentMethods = ['ATM', 'Credit Card', 'Apple Pay']
+
+  if (!data.name) errs.push("姓名不可為空")
+  if (!/^09\d{8}$/.test(data.tel)) errs.push("電話格式錯誤")
+  if (!data.email.includes("@")) errs.push("電子郵件格式錯誤")
+  if (!data.address) errs.push("地址格式錯誤")
+  if (!paymentMethods.includes(data.payment)) errs.push("不支援此交易方式")
+
+  return { isValid: errs.length === 0, errors: errs }
 }
 
 /**
@@ -94,11 +112,20 @@ function validateOrderUser(data) {
  */
 function validateCartQuantity(quantity) {
   // 請實作此函式
+  if (!Number.isInteger(quantity)) return { isValid: false, error: '必須是正整數' }
+  if (quantity < 1) return { isValid: false, error: '不可小於 1' }
+  if (quantity > 99) return { isValid: false, error: '不可大於 99' }
+
+  return { isValid: true}
 }
 
 // ========================================
 // 任務三：唯一識別碼（原生 JS 實作）
 // ========================================
+
+function generateId() {
+  return `${Date.now().toString(36).slice(2, 6)}${Math.random().toString(36).slice(2, 6)}`
+}
 
 /**
  * 1. 產生訂單編號
@@ -107,6 +134,7 @@ function validateCartQuantity(quantity) {
 function generateOrderId() {
   // 請實作此函式
   // 提示：可以用 Date.now().toString(36) + Math.random().toString(36).slice(2)
+  return `ORD-${generateId()}`
 }
 
 /**
@@ -115,6 +143,7 @@ function generateOrderId() {
  */
 function generateCartItemId() {
   // 請實作此函式
+  return `CART-${generateId()}`
 }
 
 // ========================================
@@ -129,6 +158,9 @@ async function getProductsWithAxios() {
   // 請實作此函式
   // 提示：axios.get() 會自動解析 JSON，不需要 .json()
   // 回傳 response.data.products
+  const url = BASE_URL + `/api/livejs/v1/customer/${API_PATH}/products`
+  const res = await axios.get(url)
+  return res.data.products
 }
 
 /**
@@ -140,6 +172,9 @@ async function getProductsWithAxios() {
 async function addToCartWithAxios(productId, quantity) {
   // 請實作此函式
   // 提示：axios.post(url, data) 會自動設定 Content-Type
+  const url = BASE_URL + `/api/livejs/v1/customer/${API_PATH}/carts`
+  const res = await axios.post(url, {data: {productId, quantity}})
+  return res.data
 }
 
 /**
@@ -149,16 +184,19 @@ async function addToCartWithAxios(productId, quantity) {
 async function getOrdersWithAxios() {
   // 請實作此函式
   // 提示：axios.get(url, { headers: { authorization: token } })
+  const url = BASE_URL + `/api/livejs/v1/admin/${API_PATH}/orders`
+  const res = await axios.get(url, { headers: { authorization: ADMIN_TOKEN } })
+  return res.data.orders
 }
 
 /*
 比較題：請說明 fetch 和 axios 的主要差異
 
-1. ____________________________________
+1. 會自動解析 response 的 json 資料
 
-2. ____________________________________
+2. 會自動判斷 headers 的 Content-Type，且請求方法不用寫在 method 裡面，更直觀
 
-3. ____________________________________
+3. 會自動判斷用戶端、伺服器端錯誤，不用特別處理，程式碼簡潔很多
 */
 
 // ========================================
@@ -179,6 +217,10 @@ const OrderService = {
    */
   async fetchOrders() {
     // 請實作此函式
+    // const url = this.baseURL + `/api/livejs/v1/admin/${this.apiPath}/orders`
+    // const res = await axios.get(url, { headers: { authorization: ADMIN_TOKEN } })
+    // return res.data.orders
+    return await getOrdersWithAxios()
   },
 
   /**
@@ -188,6 +230,7 @@ const OrderService = {
    */
   formatOrders(orders) {
     // 請實作此函式
+    return orders.map(obj => ({...obj, formattedDate: formatOrderDate(obj.createdAt)}))
   },
 
   /**
@@ -197,6 +240,7 @@ const OrderService = {
    */
   filterUnpaidOrders(orders) {
     // 請實作此函式
+    return orders.filter(obj => obj.paid === false)
   },
 
   /**
